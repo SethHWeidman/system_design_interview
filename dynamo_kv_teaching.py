@@ -10,9 +10,9 @@ read-repair, making the control flow easier to follow for educational use.
 import bisect
 import dataclasses
 import hashlib
+import pprint
 import time
 import typing
-from pprint import pprint
 
 
 @dataclasses.dataclass(frozen=True)
@@ -453,74 +453,66 @@ def _demo():
     print("Replicas and health before any requests:", cluster.show_status())
 
     key = "user:1"
-    print(f"\n--- Step 1: Initial write for {key} ---")
-    print("We store 'Alice' and expect a strict quorum because all replicas are up.")
-    pprint(cluster.put(key, "Alice"))
+    print(
+        f"\n--- Step 1: Initial write for {key} ---"
+        "We store 'Alice' and expect a strict quorum because all replicas are up."
+    )
+    pprint.pprint(cluster.put(key, "Alice"))
     print("Replica contents after write:")
-    pprint(cluster.dump_key_locations(key))
+    pprint.pprint(cluster.dump_key_locations(key))
 
-    print(f"\n--- Step 2: Read {key} with all replicas healthy ---")
-    print("A read quorum (R=2) should succeed without conflicts.")
-    pprint(cluster.get(key))
+    print(
+        f"\n--- Step 2: Read {key} with all replicas healthy ---"
+        "A read quorum (R=2) should succeed without conflicts."
+    )
+    pprint.pprint(cluster.get(key))
 
     failed = cluster.preference_list(key)[1]
     print(f"\n--- Step 3: Simulate failure of replica {failed} ---")
     cluster.fail_node(failed)
     print("Cluster health after failure:", cluster.show_status())
 
+    print("\n--- Step 4: Write during failure (sloppy quorum & hinted handoff) ---")
     print(
-        "\n--- Step 4: Write during failure (sloppy quorum & hinted handoff) ---"
+        "We write 'Alice v2'; the coordinator should fall back to healthy nodes and "
+        "leave a hint for the down replica."
     )
-    print(
-        "We write 'Alice v2'; the coordinator should fall back to healthy nodes"
-    )
-    print("and leave a hint for the down replica.")
-    pprint(cluster.put(key, "Alice v2"))
+    pprint.pprint(cluster.put(key, "Alice v2"))
     print("Replica contents after sloppy quorum write:")
-    pprint(cluster.dump_key_locations(key))
+    pprint.pprint(cluster.dump_key_locations(key))
 
     print("\n--- Step 5: Recover failed replica and drain hints ---")
     cluster.recover_node(failed)
     print("Cluster health after recovery:", cluster.show_status())
     print("Deliver stored hints back to the original replica:")
-    pprint(cluster.drain_hinted_handoffs(failed))
+    pprint.pprint(cluster.drain_hinted_handoffs(failed))
     print("Replica contents after hinted handoff:")
-    pprint(cluster.dump_key_locations(key))
+    pprint.pprint(cluster.dump_key_locations(key))
 
     print("\n--- Step 6: Read after repair to demonstrate read-repair ---")
     print("The read should now see a single value and repair any stale replicas.")
-    pprint(cluster.get(key))
+    pprint.pprint(cluster.get(key))
 
     key2 = "cart:42"
-    print(f"\n--- Step 7: Demonstrate conflicting writes on {key2} ---")
     print(
-        "We start with a clean cart, then perform concurrent updates from nodes A"
+        f"\n--- Step 7: Demonstrate conflicting writes on {key2} ---"
+        "We start with a clean cart, then perform concurrent updates from nodes A and "
+        "B using the same vector clock context to force a conflict."
     )
-    print("and B using the same vector clock context to force a conflict.")
-    pprint(cluster.put(key2, {"items": ["base"]}, coordinator_id="A"))
+    pprint.pprint(cluster.put(key2, {"items": ["base"]}, coordinator_id="A"))
 
     r = cluster.get(key2)
     base_vc = VectorClock(r["vector_clocks"][0])
-    pprint(
-        cluster.put(
-            key2,
-            {"items": ["base", "A"]},
-            context=base_vc,
-            coordinator_id="A",
-        )
+    pprint.pprint(
+        cluster.put(key2, {"items": ["base", "A"]}, context=base_vc, coordinator_id="A")
     )
-    pprint(
-        cluster.put(
-            key2,
-            {"items": ["base", "B"]},
-            context=base_vc,
-            coordinator_id="B",
-        )
+    pprint.pprint(
+        cluster.put(key2, {"items": ["base", "B"]}, context=base_vc, coordinator_id="B")
     )
 
     print("\nRead back the cart to inspect divergent siblings:")
     r2 = cluster.get(key2)
-    pprint(r2)
+    pprint.pprint(r2)
 
     print("\n--- Step 8: Client-side resolution and merged write ---")
     items = []
@@ -530,16 +522,9 @@ def _demo():
     vc = VectorClock()
     for vc_d in r2["vector_clocks"]:
         vc = vc.merge(VectorClock(vc_d))
-    pprint(
-        cluster.put(
-            key2,
-            {"items": items},
-            context=vc,
-            coordinator_id="C",
-        )
-    )
+    pprint.pprint(cluster.put(key2, {"items": items}, context=vc, coordinator_id="C"))
     print("Final GET after reconciliation:")
-    pprint(cluster.get(key2))
+    pprint.pprint(cluster.get(key2))
 
 
 if __name__ == "__main__":
