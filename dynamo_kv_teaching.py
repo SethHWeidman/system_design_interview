@@ -515,13 +515,38 @@ def _demo():
     pprint.pprint(r2)
 
     print("\n--- Step 8: Client-side resolution and merged write ---")
+    # CONFLICT RESOLUTION STRATEGY: Union (Set Merge)
+    #
+    # When the GET returns siblings (concurrent conflicting values), the client must
+    # choose a resolution strategy. This example uses a "union" approach: we merge all
+    # items from all siblings into a single list.
+    #
+    # For a shopping cart, this makes sense: if two concurrent operations added different
+    # items, we want to preserve both additions.
+    #
+    # ALTERNATIVE STRATEGIES:
+    # The resolution strategy is application-specific and could be different:
+    # - Intersection: Keep only items present in ALL siblings
+    #   items = list(set.intersection(*[set(v["items"]) for v in r2["values"]]))
+    # - Last-write-wins: Choose the value with the latest timestamp
+    # - Custom business logic: Apply domain-specific merge rules
+    #
+    # The key point: Dynamo doesn't dictate HOW to resolve conflicts, only that the
+    # client MUST resolve them before writing back to prevent unbounded sibling growth.
     items = []
     for v in r2["values"]:
         items.extend(v["items"])
     items = list(dict.fromkeys(items))  # Preserve original order while deduping
+
+    # Merge all vector clocks from the conflicting siblings to create a context that
+    # causally dominates both branches. This tells the cluster: "I've seen both
+    # conflicting versions and am now reconciling them."
     vc = VectorClock()
     for vc_d in r2["vector_clocks"]:
         vc = vc.merge(VectorClock(vc_d))
+
+    # Write the reconciled value back with the merged vector clock context. This new
+    # write will supersede both conflicting siblings.
     pprint.pprint(cluster.put(key2, {"items": items}, context=vc, coordinator_id="C"))
     print("Final GET after reconciliation:")
     pprint.pprint(cluster.get(key2))
